@@ -20,7 +20,6 @@ package com.regnosys.testing.pipeline;
  * ===============
  */
 
-import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.base.Stopwatch;
@@ -29,13 +28,13 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.io.Resources;
-import com.regnosys.rosetta.common.serialisation.RosettaObjectMapper;
 import com.regnosys.rosetta.common.transform.FunctionNameHelper;
 import com.regnosys.rosetta.common.transform.PipelineModel;
 import com.regnosys.rosetta.common.transform.TestPackModel;
 import com.regnosys.rosetta.common.transform.TransformType;
 import com.regnosys.rosetta.common.validation.ValidationReport;
 import com.regnosys.testing.reports.ObjectMapperGenerator;
+import com.regnosys.testing.serialisation.DefaultModelSerialisation;
 import com.regnosys.testing.validation.ValidationSummariser;
 import com.rosetta.model.lib.RosettaModelObject;
 import org.jetbrains.annotations.NotNull;
@@ -66,7 +65,10 @@ public class PipelineTestPackWriter {
 
     private static final Logger LOGGER = org.slf4j.LoggerFactory.getLogger(PipelineTestPackWriter.class);
 
-    private static final ObjectMapper JSON_OBJECT_MAPPER = RosettaObjectMapper.getNewRosettaObjectMapper();
+    // The default JSON mapper/writer for a transform side with no explicit format: the model's configured
+    // defaultSerialisationFormat (rune-json or legacy), read from its rune-config.yml/rosetta-config.yml.
+    private final DefaultModelSerialisation defaultSerialisation = DefaultModelSerialisation.resolve(this.getClass().getClassLoader());
+    private final ObjectMapper defaultJsonObjectMapper = defaultSerialisation.getObjectMapper();
 
     private final PipelineTreeBuilder pipelineTreeBuilder;
     private final PipelineModelBuilder pipelineModelBuilder;
@@ -92,10 +94,7 @@ public class PipelineTestPackWriter {
 
         LOGGER.info("Starting test pack Generation");
         ObjectWriter configObjectWriter = ObjectMapperGenerator.createWriterMapper().writerWithDefaultPrettyPrinter();
-        ObjectWriter jsonObjectWriter =
-                JSON_OBJECT_MAPPER
-                        .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, config.isSortJsonPropertiesAlphabetically())
-                        .writerWithDefaultPrettyPrinter();
+        ObjectWriter jsonObjectWriter = defaultSerialisation.createWriter(config.isSortJsonPropertiesAlphabetically());
 
         Path resourcesPath = config.getWritePath();
 
@@ -190,7 +189,7 @@ public class PipelineTestPackWriter {
                         functionType,
                         pipeline.getInputSerialisation(),
                         pipeline.getOutputSerialisation(),
-                        JSON_OBJECT_MAPPER,
+                        defaultJsonObjectMapper,
                         jsonObjectWriter,
                         outputXsdValidator);
 
