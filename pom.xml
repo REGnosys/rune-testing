@@ -92,7 +92,7 @@
         <java.enforced.version>[21,22)</java.enforced.version>
         <maven.compiler.release>21</maven.compiler.release>
 
-        <rune.dsl.version>10.8.0</rune.dsl.version>
+        <rune.dsl.version>10.10.0</rune.dsl.version>
         <rune.common.version>0.0.0.main-SNAPSHOT</rune.common.version>
 
         <xtext.version>2.38.0</xtext.version>
@@ -115,7 +115,7 @@
         <junit.version>5.9.1</junit.version>
         <mockito.version>5.12.0</mockito.version>
         <hamcrest.version>2.2</hamcrest.version>
-        <logback.version>1.5.25</logback.version>
+        <logback.version>1.5.38</logback.version>
 
         <!-- plugins -->
         <maven-enforcer-plugin.version>3.3.0</maven-enforcer-plugin.version>
