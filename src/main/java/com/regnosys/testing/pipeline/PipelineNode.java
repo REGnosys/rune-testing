@@ -26,6 +26,7 @@ import com.rosetta.model.lib.functions.RosettaFunction;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class PipelineNode {
@@ -35,6 +36,7 @@ public class PipelineNode {
     private final TransformType transformType;
     private Class<? extends RosettaFunction> function;
     private PipelineNode upstream;
+    private Predicate<String> testPackIdFilter = testPackId -> true;
 
     public PipelineNode(String modelId, FunctionNameHelper functionNameHelper, TransformType transformType) {
         this.modelId = modelId;
@@ -83,6 +85,19 @@ public class PipelineNode {
     public PipelineNode linkWithUpstream(PipelineNode upstreamPipelineNode) {
         this.upstream = upstreamPipelineNode;
         return this;
+    }
+
+    /**
+     * Restricts the test packs generated for this node. Set by the {@link PipelineTreeBuilder} to the intersection of the
+     * test pack filters on the path from the starting function to this node.
+     */
+    PipelineNode withTestPackIdFilter(Predicate<String> testPackIdFilter) {
+        this.testPackIdFilter = testPackIdFilter;
+        return this;
+    }
+
+    public Predicate<String> getTestPackIdFilter() {
+        return testPackIdFilter;
     }
 
     public Class<? extends RosettaFunction> getFunction() {

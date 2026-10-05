@@ -32,8 +32,13 @@ import com.rosetta.model.lib.functions.RosettaFunction;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -42,6 +47,8 @@ public class PipelineTreeConfig {
     private final List<TransformFunction> starting = new ArrayList<>();
     private final String modelId;
     private final Multimap<Class<? extends RosettaFunction>, TransformFunction> conf = ArrayListMultimap.create();
+    private final Map<Edge, Predicate<String>> edgeTestPackIdFilters = new HashMap<>();
+    private final Set<Class<? extends RosettaFunction>> skipTestPackGeneration = new HashSet<>();
     
     private ImmutableMap<Class<?>, String> xmlConfigMap;
     private ImmutableMap<Class<?>, String> xmlSchemaMap;
@@ -85,14 +92,65 @@ public class PipelineTreeConfig {
         return this;
     }
 
+    /**
+     * Adds a starting function that only generates test packs whose id matches the given filter.
+     * The filter cascades: every function downstream of this one is also restricted to these test packs.
+     */
+    public PipelineTreeConfig starting(TransformType transformType, Class<? extends RosettaFunction> function, Predicate<String> testPackIdFilter) {
+        starting(transformType, function);
+        addEdgeTestPackIdFilter(new Edge(null, function), testPackIdFilter);
+        return this;
+    }
+
     List<TransformFunction> getStarting() {
         return starting;
     }
 
     public PipelineTreeConfig add(Class<? extends RosettaFunction> upstreamFunction, TransformType transformType, Class<? extends RosettaFunction> function) {
         TransformFunction current = new TransformFunction(function, transformType);
-        conf.put(upstreamFunction, current);
+        if (conf.get(upstreamFunction).stream().noneMatch(t -> t.getFunction().equals(function))) {
+            conf.put(upstreamFunction, current);
+        }
         return this;
+    }
+
+    /**
+     * Adds a downstream function that, when fed by the given upstream function, only generates test packs whose id matches
+     * the given filter. The filter cascades: a node's effective filter is the intersection of the filters on the path from
+     * its starting function, so functions further downstream are also restricted to these test packs.
+     * <p>
+     * The filter belongs to the upstream-to-function link rather than the function, so the same function can be given a
+     * different filter under a different upstream function. Adding the same link more than once unions the filters.
+     */
+    public PipelineTreeConfig add(Class<? extends RosettaFunction> upstreamFunction, TransformType transformType, Class<? extends RosettaFunction> function, Predicate<String> testPackIdFilter) {
+        add(upstreamFunction, transformType, function);
+        addEdgeTestPackIdFilter(new Edge(upstreamFunction, function), testPackIdFilter);
+        return this;
+    }
+
+    private void addEdgeTestPackIdFilter(Edge edge, Predicate<String> testPackIdFilter) {
+        edgeTestPackIdFilters.merge(edge, testPackIdFilter, Predicate::or);
+    }
+
+    /**
+     * Returns the test pack filter for the link from the upstream function (null for a starting function) to the function.
+     * Links without a filter accept all test packs.
+     */
+    Predicate<String> getEdgeTestPackIdFilter(Class<? extends RosettaFunction> upstreamFunction, Class<? extends RosettaFunction> function) {
+        return edgeTestPackIdFilters.getOrDefault(new Edge(upstreamFunction, function), testPackId -> true);
+    }
+
+    /**
+     * Keeps the function in the tree, so downstream input paths and pipeline ids still resolve, but does not regenerate its
+     * test packs. Use when the function's output has already been generated, e.g. by an earlier call.
+     */
+    public PipelineTreeConfig skipTestPackGeneration(Class<? extends RosettaFunction> function) {
+        skipTestPackGeneration.add(function);
+        return this;
+    }
+
+    boolean isTestPackGenerationSkipped(Class<? extends RosettaFunction> function) {
+        return skipTestPackGeneration.contains(function);
     }
 
     public PipelineTreeConfig withWritePath(Path writePath) {
@@ -193,6 +251,30 @@ public class PipelineTreeConfig {
 
     public boolean isSortJsonPropertiesAlphabetically() {
         return Optional.ofNullable(sortJsonPropertiesAlphabetically).orElse(true);
+    }
+
+    private static final class Edge {
+
+        private final Class<? extends RosettaFunction> upstreamFunction;
+        private final Class<? extends RosettaFunction> function;
+
+        private Edge(Class<? extends RosettaFunction> upstreamFunction, Class<? extends RosettaFunction> function) {
+            this.upstreamFunction = upstreamFunction;
+            this.function = function;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Edge)) return false;
+            Edge edge = (Edge) o;
+            return Objects.equals(upstreamFunction, edge.upstreamFunction) && Objects.equals(function, edge.function);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(upstreamFunction, function);
+        }
     }
 
     static class TransformFunction {
