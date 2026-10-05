@@ -108,6 +108,11 @@ public class PipelineTestPackWriter {
             String functionName = pipelineNode.getFunction().getName();
             LOGGER.info("Generating {} test packs for {} ", transformType, functionName);
 
+            if (config.isTestPackGenerationSkipped(pipelineNode.getFunction())) {
+                LOGGER.info("Skipping {} Test Pack Generation for {} as it has been configured to skip test pack generation", transformType, functionName);
+                continue;
+            }
+
             final PipelineTestPackFilter pipelineTestPackFilter = config.getTestPackFilter();
             if (pipelineTestPackFilter != null && pipelineTestPackFilter.getExcludedFunctionsFromTestPackGeneration().contains(pipelineNode.getFunction())) {
                 LOGGER.info("Aborting {} Test Pack Generation for {} as this has been excluded from Test Pack generation", transformType, functionName);
@@ -123,7 +128,7 @@ public class PipelineTestPackWriter {
             List<Path> inputSamples = findAllSamples(inputPath);
 
             Map<String, List<Path>> testPackToSamples =
-                    filterAndGroupingByTestPackId(resourcesPath, inputPath, inputSamples, config.getTestPackIdFilter(), config.getCsvTestPackSourceFiles());
+                    filterAndGroupingByTestPackId(resourcesPath, inputPath, inputSamples, config.getTestPackIdFilter().and(pipelineNode.getTestPackIdFilter()), config.getCsvTestPackSourceFiles());
 
             Map<String, List<Path>> filteredTestPackToSamples = Optional.ofNullable(pipelineTestPackFilter)
                     .map(t -> filterTestPacks(pipelineNode, pipelineTestPackFilter, testPackToSamples)).orElse(testPackToSamples);
