@@ -134,6 +134,30 @@ class PipelineTreeBuilderTest {
         assertAccepts(nodes.get("pipeline-report-testPrefix-start-middle"), "tp-1", "tp-2");
     }
 
+    @Test
+    void createPipelineTreeKeepsAllTestPacksWhenRepeatedLinkHasNoFilter() {
+        PipelineTreeConfig filteredFirst = new PipelineTreeConfig("testPrefix")
+                .starting(TransformType.ENRICH, helper.startClass())
+                .add(helper.startClass(), TransformType.REPORT, helper.middleClass(), equalsTo("tp-1"))
+                .add(helper.startClass(), TransformType.REPORT, helper.middleClass());
+        PipelineTreeConfig unfilteredFirst = new PipelineTreeConfig("testPrefix")
+                .starting(TransformType.ENRICH, helper.startClass())
+                .add(helper.startClass(), TransformType.REPORT, helper.middleClass())
+                .add(helper.startClass(), TransformType.REPORT, helper.middleClass(), equalsTo("tp-1"));
+
+        assertAccepts(nodesById(filteredFirst).get("pipeline-report-testPrefix-start-middle"), "tp-1", "tp-2", "tp-3", "tp-pre");
+        assertAccepts(nodesById(unfilteredFirst).get("pipeline-report-testPrefix-start-middle"), "tp-1", "tp-2", "tp-3", "tp-pre");
+    }
+
+    @Test
+    void createPipelineTreeKeepsAllTestPacksWhenRepeatedStartingHasNoFilter() {
+        PipelineTreeConfig config = new PipelineTreeConfig("testPrefix")
+                .starting(TransformType.ENRICH, helper.startClass())
+                .starting(TransformType.ENRICH, helper.startClass(), equalsTo("tp-1"));
+
+        assertAccepts(nodesById(config).get("pipeline-enrich-testPrefix-start"), "tp-1", "tp-2", "tp-3", "tp-pre");
+    }
+
     private Map<String, PipelineNode> nodesById(PipelineTreeConfig config) {
         return pipelineTreeBuilder.createPipelineTree(config).getNodeList().stream()
                 .collect(Collectors.toMap(n -> n.id(true), Function.identity()));
