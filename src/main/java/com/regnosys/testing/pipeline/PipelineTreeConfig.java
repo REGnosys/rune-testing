@@ -44,6 +44,9 @@ import java.util.stream.Collectors;
 
 public class PipelineTreeConfig {
 
+    // Links added without a filter store this, so a filter added for the same link elsewhere unions to all test packs
+    private static final Predicate<String> ALL_TEST_PACKS = testPackId -> true;
+
     private final List<TransformFunction> starting = new ArrayList<>();
     private final String modelId;
     private final Multimap<Class<? extends RosettaFunction>, TransformFunction> conf = ArrayListMultimap.create();
@@ -88,8 +91,7 @@ public class PipelineTreeConfig {
     }
 
     public PipelineTreeConfig starting(TransformType transformType, Class<? extends RosettaFunction> function) {
-        starting.add(new TransformFunction(function, transformType));
-        return this;
+        return starting(transformType, function, ALL_TEST_PACKS);
     }
 
     /**
@@ -97,7 +99,7 @@ public class PipelineTreeConfig {
      * The filter cascades: every function downstream of this one is also restricted to these test packs.
      */
     public PipelineTreeConfig starting(TransformType transformType, Class<? extends RosettaFunction> function, Predicate<String> testPackIdFilter) {
-        starting(transformType, function);
+        starting.add(new TransformFunction(function, transformType));
         addEdgeTestPackIdFilter(new Edge(null, function), testPackIdFilter);
         return this;
     }
@@ -107,11 +109,7 @@ public class PipelineTreeConfig {
     }
 
     public PipelineTreeConfig add(Class<? extends RosettaFunction> upstreamFunction, TransformType transformType, Class<? extends RosettaFunction> function) {
-        TransformFunction current = new TransformFunction(function, transformType);
-        if (conf.get(upstreamFunction).stream().noneMatch(t -> t.getFunction().equals(function))) {
-            conf.put(upstreamFunction, current);
-        }
-        return this;
+        return add(upstreamFunction, transformType, function, ALL_TEST_PACKS);
     }
 
     /**
@@ -120,10 +118,13 @@ public class PipelineTreeConfig {
      * its starting function, so functions further downstream are also restricted to these test packs.
      * <p>
      * The filter belongs to the upstream-to-function link rather than the function, so the same function can be given a
-     * different filter under a different upstream function. Adding the same link more than once unions the filters.
+     * different filter under a different upstream function. Adding the same link more than once unions the filters, and
+     * adding it without a filter accepts all test packs, so merging trees never narrows a link that was unfiltered.
      */
     public PipelineTreeConfig add(Class<? extends RosettaFunction> upstreamFunction, TransformType transformType, Class<? extends RosettaFunction> function, Predicate<String> testPackIdFilter) {
-        add(upstreamFunction, transformType, function);
+        if (conf.get(upstreamFunction).stream().noneMatch(t -> t.getFunction().equals(function))) {
+            conf.put(upstreamFunction, new TransformFunction(function, transformType));
+        }
         addEdgeTestPackIdFilter(new Edge(upstreamFunction, function), testPackIdFilter);
         return this;
     }
@@ -137,7 +138,7 @@ public class PipelineTreeConfig {
      * Links without a filter accept all test packs.
      */
     Predicate<String> getEdgeTestPackIdFilter(Class<? extends RosettaFunction> upstreamFunction, Class<? extends RosettaFunction> function) {
-        return edgeTestPackIdFilters.getOrDefault(new Edge(upstreamFunction, function), testPackId -> true);
+        return edgeTestPackIdFilters.getOrDefault(new Edge(upstreamFunction, function), ALL_TEST_PACKS);
     }
 
     /**
