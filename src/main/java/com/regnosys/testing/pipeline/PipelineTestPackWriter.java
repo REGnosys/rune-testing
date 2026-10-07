@@ -109,6 +109,7 @@ public class PipelineTestPackWriter {
             LOGGER.info("Generating {} test packs for {} ", transformType, functionName);
 
             if (config.isTestPackGenerationSkipped(pipelineNode.getFunction())) {
+                checkSkippedOutputExists(resourcesPath, pipelineTree, pipelineNode, config.isStrictUniqueIds());
                 LOGGER.info("Skipping {} Test Pack Generation for {} as it has been configured to skip test pack generation", transformType, functionName);
                 continue;
             }
@@ -149,6 +150,24 @@ public class PipelineTestPackWriter {
         }
 
         LOGGER.info("Test pack generation complete, took {}", stopwatch);
+    }
+
+    /**
+     * Downstream functions read a skipped function's existing output, so fail rather than silently generate no test packs
+     * when that output has not been generated.
+     */
+    private void checkSkippedOutputExists(Path resourcesPath, PipelineTree pipelineTree, PipelineNode skippedNode, boolean strictUniqueIds) {
+        String skippedNodeId = skippedNode.id(true);
+        boolean hasDownstream = pipelineTree.getNodeList().stream()
+                .map(PipelineNode::getUpstream)
+                .anyMatch(upstream -> upstream != null && upstream.id(true).equals(skippedNodeId));
+        Path outputPath = resourcesPath.resolve(skippedNode.getOutputPath(strictUniqueIds));
+        if (hasDownstream && !Files.exists(outputPath)) {
+            throw new IllegalStateException(String.format(
+                    "Test pack generation is skipped for %s, but its output %s does not exist, so its downstream functions would generate no test packs. " +
+                            "Generate it first, or stop skipping it.",
+                    skippedNode.getFunction().getName(), outputPath));
+        }
     }
 
     private List<Path> findAllSamples(Path inputDir) throws IOException {

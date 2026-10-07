@@ -34,6 +34,7 @@ import java.util.function.Predicate;
 import static com.regnosys.testing.pipeline.PipelineFilter.equalsTo;
 import static com.regnosys.testing.pipeline.PipelineFilter.startsWith;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PipelineTestPackWriterTest {
@@ -135,6 +136,9 @@ public class PipelineTestPackWriterTest {
     @Test
     void writeTestPacksOnlyForEachNodesCascadedTestPackFilter(@TempDir Path tempDir) throws Exception {
         writeEnrichInputSamples(tempDir);
+        // Stale output from an earlier run: middle-a's filter excludes test-pack-2, so end-a must not pick it up either
+        Path staleOutputPath = Files.createDirectories(tempDir.resolve("regulatory-reporting/output/start/middle-a/test-pack-2"));
+        Files.write(staleOutputPath.resolve("sample-2-1.json"), "{\"name\": \"2-1\"}".getBytes());
 
         PipelineTreeConfig chain = new PipelineTreeConfig("testPrefix")
                 .starting(TransformType.ENRICH, helper.startClass())
@@ -151,13 +155,13 @@ public class PipelineTestPackWriterTest {
         assertFileExists(tempDir, "regulatory-reporting/config/test-pack-report-start-middle-a-test-pack-1.json");
         assertFileExists(tempDir, "regulatory-reporting/output/start/middle-a/test-pack-1/sample-1-1.json");
         assertFileDoesNotExist(tempDir, "regulatory-reporting/config/test-pack-report-start-middle-a-test-pack-2.json");
-        assertFileDoesNotExist(tempDir, "regulatory-reporting/output/start/middle-a/test-pack-2/sample-2-1.json");
 
         assertFileExists(tempDir, "regulatory-reporting/output/start/middle-b/test-pack-1/sample-1-1.json");
         assertFileExists(tempDir, "regulatory-reporting/output/start/middle-b/test-pack-2/sample-2-1.json");
 
         assertFileExists(tempDir, "projection/config/test-pack-projection-start-middle-a-end-a-test-pack-1.json");
         assertFileDoesNotExist(tempDir, "projection/config/test-pack-projection-start-middle-a-end-a-test-pack-2.json");
+        assertFileDoesNotExist(tempDir, "projection/output/start/middle-a/end-a/test-pack-2/sample-2-1.json");
     }
 
     @Test
@@ -176,6 +180,30 @@ public class PipelineTestPackWriterTest {
         assertFileExists(tempDir, "regulatory-reporting/config/test-pack-report-start-middle-test-pack-1.json");
         assertFileExists(tempDir, "regulatory-reporting/output/start/middle/test-pack-1/sample-1-1.json");
         assertFileExists(tempDir, "projection/output/start/middle/end/test-pack-1/sample-1-1.json");
+    }
+
+    @Test
+    void writeTestPacksFailsWhenSkippedFunctionWithDownstreamHasNoOutput(@TempDir Path tempDir) {
+        PipelineTreeConfig chain = helper.createTreeConfig()
+                .skipTestPackGeneration(helper.startClass())
+                .strictUniqueIds()
+                .withWritePath(tempDir);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> pipelineTestPackWriter.writeTestPacks(chain));
+        assertTrue(e.getMessage().contains(tempDir.resolve("enrich/output/start").toString()), e.getMessage());
+    }
+
+    @Test
+    void writeTestPacksAllowsSkippedLeafFunctionWithNoOutput(@TempDir Path tempDir) throws Exception {
+        PipelineTreeConfig chain = new PipelineTreeConfig("testPrefix")
+                .starting(TransformType.ENRICH, helper.startClass())
+                .skipTestPackGeneration(helper.startClass())
+                .strictUniqueIds()
+                .withWritePath(tempDir);
+
+        pipelineTestPackWriter.writeTestPacks(chain);
+
+        assertFileDoesNotExist(tempDir, "enrich/config/test-pack-enrich-start-test-pack-1.json");
     }
 
     private static void writeEnrichInputSamples(Path tempDir) throws IOException {
