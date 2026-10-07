@@ -143,7 +143,8 @@ public class PipelineTreeConfig {
 
     /**
      * Keeps the function in the tree, so downstream input paths and pipeline ids still resolve, but does not regenerate its
-     * test packs. Use when the function's output has already been generated, e.g. by an earlier call.
+     * test packs. Use when the function's output has already been generated, e.g. by an earlier call. Test pack generation
+     * fails if the function has downstream functions and its output does not exist.
      */
     public PipelineTreeConfig skipTestPackGeneration(Class<? extends RosettaFunction> function) {
         skipTestPackGeneration.add(function);
