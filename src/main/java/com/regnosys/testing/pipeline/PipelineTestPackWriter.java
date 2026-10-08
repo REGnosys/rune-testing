@@ -105,13 +105,13 @@ public class PipelineTestPackWriter {
             Stopwatch pipelineStopwatch = Stopwatch.createStarted();
             TransformType transformType = pipelineNode.getTransformType();
             String functionName = pipelineNode.getFunction().getName();
-            LOGGER.info("Generating {} test packs for {} ", transformType, functionName);
-
             if (config.isTestPackGenerationSkipped(pipelineNode.getFunction())) {
                 checkSkippedOutputExists(resourcesPath, pipelineTree, pipelineNode, config.isStrictUniqueIds());
-                LOGGER.info("Skipping {} Test Pack Generation for {} as it has been configured to skip test pack generation", transformType, functionName);
+                LOGGER.info("Reusing existing {} output for {} from {}", transformType, functionName, resourcesPath.resolve(pipelineNode.getOutputPath(config.isStrictUniqueIds())));
                 continue;
             }
+
+            LOGGER.info("Generating {} test packs for {} ", transformType, functionName);
 
             final PipelineTestPackFilter pipelineTestPackFilter = config.getTestPackFilter();
             if (pipelineTestPackFilter != null && pipelineTestPackFilter.getExcludedFunctionsFromTestPackGeneration().contains(pipelineNode.getFunction())) {
