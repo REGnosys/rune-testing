@@ -33,12 +33,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -51,7 +49,6 @@ public class PipelineTreeConfig {
     private final String modelId;
     private final Multimap<Class<? extends RosettaFunction>, TransformFunction> conf = ArrayListMultimap.create();
     private final Map<Edge, Predicate<String>> edgeTestPackIdFilters = new HashMap<>();
-    private final Set<Class<? extends RosettaFunction>> skipTestPackGeneration = new HashSet<>();
     
     private ImmutableMap<Class<?>, String> xmlConfigMap;
     private ImmutableMap<Class<?>, String> xmlSchemaMap;
@@ -139,20 +136,6 @@ public class PipelineTreeConfig {
      */
     Predicate<String> getEdgeTestPackIdFilter(Class<? extends RosettaFunction> upstreamFunction, Class<? extends RosettaFunction> function) {
         return edgeTestPackIdFilters.getOrDefault(new Edge(upstreamFunction, function), ALL_TEST_PACKS);
-    }
-
-    /**
-     * Keeps the function in the tree, so downstream input paths and pipeline ids still resolve, but does not regenerate its
-     * test packs. Use when the function's output has already been generated, e.g. by an earlier call. Test pack generation
-     * fails if the function has downstream functions and its output does not exist.
-     */
-    public PipelineTreeConfig skipTestPackGeneration(Class<? extends RosettaFunction> function) {
-        skipTestPackGeneration.add(function);
-        return this;
-    }
-
-    boolean isTestPackGenerationSkipped(Class<? extends RosettaFunction> function) {
-        return skipTestPackGeneration.contains(function);
     }
 
     public PipelineTreeConfig withWritePath(Path writePath) {
