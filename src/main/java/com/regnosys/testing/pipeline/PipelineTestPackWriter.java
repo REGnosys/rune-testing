@@ -106,13 +106,6 @@ public class PipelineTestPackWriter {
             Stopwatch pipelineStopwatch = Stopwatch.createStarted();
             TransformType transformType = pipelineNode.getTransformType();
             String functionName = pipelineNode.getFunction().getName();
-            if (config.isTestPackGenerationSkipped(pipelineNode.getFunction())) {
-                checkSkippedOutputExists(resourcesPath, pipelineTree, pipelineNode, config.isStrictUniqueIds());
-                LOGGER.info("Reusing existing {} output for {} from {}; read by {} downstream functions",
-                        transformType, functionName, resourcesPath.resolve(pipelineNode.getOutputPath(config.isStrictUniqueIds())), pipelineTree.downstreamCount(pipelineNode));
-                continue;
-            }
-
             LOGGER.debug("Generating {} test packs for {} ", transformType, functionName);
 
             final PipelineTestPackFilter pipelineTestPackFilter = config.getTestPackFilter();
@@ -162,21 +155,6 @@ public class PipelineTestPackWriter {
         }
 
         LOGGER.info("Test pack generation complete, took {}", stopwatch);
-    }
-
-    /**
-     * Downstream functions read a skipped function's existing output, so fail rather than silently generate no test packs
-     * when that output has not been generated.
-     */
-    private void checkSkippedOutputExists(Path resourcesPath, PipelineTree pipelineTree, PipelineNode skippedNode, boolean strictUniqueIds) {
-        boolean hasDownstream = pipelineTree.downstreamCount(skippedNode) > 0;
-        Path outputPath = resourcesPath.resolve(skippedNode.getOutputPath(strictUniqueIds));
-        if (hasDownstream && !Files.exists(outputPath)) {
-            throw new IllegalStateException(String.format(
-                    "Test pack generation is skipped for %s, but its output %s does not exist, so its downstream functions would generate no test packs. " +
-                            "Generate it first, or stop skipping it.",
-                    skippedNode.getFunction().getName(), outputPath));
-        }
     }
 
     private List<Path> findAllSamples(Path inputDir) throws IOException {
