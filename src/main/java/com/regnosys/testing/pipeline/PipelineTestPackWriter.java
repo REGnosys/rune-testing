@@ -107,7 +107,8 @@ public class PipelineTestPackWriter {
             String functionName = pipelineNode.getFunction().getName();
             if (config.isTestPackGenerationSkipped(pipelineNode.getFunction())) {
                 checkSkippedOutputExists(resourcesPath, pipelineTree, pipelineNode, config.isStrictUniqueIds());
-                LOGGER.info("Reusing existing {} output for {} from {}", transformType, functionName, resourcesPath.resolve(pipelineNode.getOutputPath(config.isStrictUniqueIds())));
+                LOGGER.info("Reusing existing {} output for {} from {}; read by {} downstream functions",
+                        transformType, functionName, resourcesPath.resolve(pipelineNode.getOutputPath(config.isStrictUniqueIds())), pipelineTree.downstreamCount(pipelineNode));
                 continue;
             }
 
@@ -120,7 +121,12 @@ public class PipelineTestPackWriter {
             }
 
             Path inputPath = resourcesPath.resolve(pipelineNode.getInputPath(config.isStrictUniqueIds()));
-            LOGGER.info("Input path {} ", inputPath);
+            PipelineNode upstream = pipelineNode.getUpstream();
+            if (upstream == null) {
+                LOGGER.info("Input path {} ", inputPath);
+            } else {
+                LOGGER.info("Input path {} (output of {} {})", inputPath, upstream.getTransformType(), upstream.getFunction().getName());
+            }
 
             Path outputPath = resourcesPath.resolve(pipelineNode.getOutputPath(config.isStrictUniqueIds()));
             LOGGER.info("Output path {} ", outputPath);
@@ -141,7 +147,13 @@ public class PipelineTestPackWriter {
                 Path writeFile = writePath.resolve(testPackModel.getId() + ".json");
                 configObjectWriter.writeValue(writeFile.toFile(), testPackModel);
             }
-            LOGGER.info("Generated {} {} test packs for {}, took {}", filteredTestPackToSamples.size(), transformType, functionName, pipelineStopwatch);
+            int downstreamCount = pipelineTree.downstreamCount(pipelineNode);
+            if (downstreamCount == 0) {
+                LOGGER.info("Generated {} {} test packs for {}, took {}", filteredTestPackToSamples.size(), transformType, functionName, pipelineStopwatch);
+            } else {
+                LOGGER.info("Generated {} {} test packs for {}, took {}; output read by {} downstream functions",
+                        filteredTestPackToSamples.size(), transformType, functionName, pipelineStopwatch, downstreamCount);
+            }
         }
 
         if (validationSummariser != null) {
@@ -156,10 +168,7 @@ public class PipelineTestPackWriter {
      * when that output has not been generated.
      */
     private void checkSkippedOutputExists(Path resourcesPath, PipelineTree pipelineTree, PipelineNode skippedNode, boolean strictUniqueIds) {
-        String skippedNodeId = skippedNode.id(true);
-        boolean hasDownstream = pipelineTree.getNodeList().stream()
-                .map(PipelineNode::getUpstream)
-                .anyMatch(upstream -> upstream != null && upstream.id(true).equals(skippedNodeId));
+        boolean hasDownstream = pipelineTree.downstreamCount(skippedNode) > 0;
         Path outputPath = resourcesPath.resolve(skippedNode.getOutputPath(strictUniqueIds));
         if (hasDownstream && !Files.exists(outputPath)) {
             throw new IllegalStateException(String.format(
