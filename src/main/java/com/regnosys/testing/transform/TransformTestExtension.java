@@ -55,7 +55,6 @@ import jakarta.inject.Inject;
 import javax.xml.XMLConstants;
 import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
-import javax.xml.validation.Validator;
 import java.net.URL;
 import java.nio.file.Path;
 import java.util.*;
@@ -86,7 +85,7 @@ public class TransformTestExtension<T> implements BeforeAllCallback, AfterAllCal
     private final DefaultModelSerialisation defaultSerialisation = DefaultModelSerialisation.resolve(this.getClass().getClassLoader());
     private final ObjectMapper defaultJsonObjectMapper = defaultSerialisation.getObjectMapper();
     private ObjectWriter jsonObjectWriter = defaultSerialisation.createWriter(true);
-    private Validator outputXsdValidator;
+    private Schema outputXsdSchema;
     private boolean includeAllPipelinesForFunction;
 
     private List<PipelineModel> functionPipelineModels;
@@ -114,13 +113,16 @@ public class TransformTestExtension<T> implements BeforeAllCallback, AfterAllCal
         return this;
     }
 
-    public TransformTestExtension<T> withSchemaValidation(URL outputXsdSchema) {
+    /**
+     * Validates each function output against the XSD schema at the given URL. The schema is loaded once and shared;
+     * each run creates its own validator from it.
+     */
+    public TransformTestExtension<T> withSchemaValidation(URL outputXsdSchemaUrl) {
         try {
             SchemaFactory schemaFactory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
             // required to process xml elements with an maxOccurs greater than 5000 (rather than unbounded)
             schemaFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, false);
-            Schema schema = schemaFactory.newSchema(outputXsdSchema);
-            this.outputXsdValidator = schema.newValidator();
+            this.outputXsdSchema = schemaFactory.newSchema(outputXsdSchemaUrl);
         } catch (SAXException e) {
             throw new RuntimeException(e);
         }
@@ -132,6 +134,11 @@ public class TransformTestExtension<T> implements BeforeAllCallback, AfterAllCal
         return this;
     }
 
+    /**
+     * Injects this extension's dependencies, loads the pipeline models for the function under test (all of them, or
+     * just the one for this model, per {@link #withIncludeAllPipelinesForFunction}) and creates one function runner per
+     * pipeline, with the schema set by {@link #withSchemaValidation}, if any.
+     */
     @BeforeAll
     public void beforeAll(ExtensionContext context) {
         Injector injector = Guice.createInjector(runtimeModule);
@@ -152,7 +159,7 @@ public class TransformTestExtension<T> implements BeforeAllCallback, AfterAllCal
                     m.getOutputSerialisation(),
                     defaultJsonObjectMapper,
                     jsonObjectWriter,
-                    outputXsdValidator);
+                    outputXsdSchema);
             pipelineIdFunctionRunnerMap.put(m.getId(), pipelineFunctionRunner);
         });
         this.actualExpectation = ArrayListMultimap.create();

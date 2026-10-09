@@ -36,7 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jakarta.inject.Inject;
-import javax.xml.validation.Validator;
+import javax.xml.validation.Schema;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.function.Function;
@@ -67,7 +67,7 @@ public class PipelineFunctionRunnerProviderImpl implements PipelineFunctionRunne
                                          PipelineModel.Serialisation outputSerialisation,
                                          ObjectMapper defaultJsonObjectMapper,
                                          ObjectWriter defaultJsonObjectWriter,
-                                         Validator outputXsdValidator) {
+                                         Schema outputXsdSchema) {
         // Each side resolves from the function's @Ingest/@Projection annotation (the model's source of
         // truth), falling back to the deprecated pipeline serialisation for models generated before
         // transform annotations existed, and finally to the default JSON mapper/writer. Construction —
@@ -84,15 +84,19 @@ public class PipelineFunctionRunnerProviderImpl implements PipelineFunctionRunne
                 inputType,
                 inputObjectMapper,
                 outputObjectWriter,
-                outputXsdValidator);
+                outputXsdSchema);
     }
 
+    /**
+     * Creates a runner around one instance of the function, taken from the injector. That instance serves every sample
+     * the runner is invoked for, possibly concurrently.
+     */
     private <IN extends RosettaModelObject> PipelineFunctionRunner createTestPackFunctionRunner(TransformType transformType,
                                                                                                 Class<?> functionType,
                                                                                                 Class<IN> inputType,
                                                                                                 ObjectMapper inputObjectMapper,
                                                                                                 ObjectWriter outputObjectWriter,
-                                                                                                Validator xsdValidator) {
+                                                                                                Schema xsdSchema) {
         Function<IN, RosettaModelObject> transformFunction = getTransformFunction(functionType, inputType);
         return new PipelineFunctionRunnerImpl<>(transformType,
                 transformFunction,
@@ -102,7 +106,7 @@ public class PipelineFunctionRunnerProviderImpl implements PipelineFunctionRunne
                 inputObjectMapper,
                 outputObjectWriter,
                 postProcessor,
-                xsdValidator);
+                xsdSchema);
     }
 
     private <IN extends RosettaModelObject> Function<IN, RosettaModelObject> getTransformFunction(Class<?> functionType, Class<IN> inputType) {

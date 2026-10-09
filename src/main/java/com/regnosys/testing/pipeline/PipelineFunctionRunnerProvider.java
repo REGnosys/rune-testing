@@ -27,11 +27,23 @@ import com.regnosys.rosetta.common.transform.PipelineModel;
 import com.regnosys.rosetta.common.transform.TransformType;
 import com.rosetta.model.lib.RosettaModelObject;
 
-import javax.xml.validation.Validator;
+import javax.xml.validation.Schema;
 
 @ImplementedBy(PipelineFunctionRunnerProviderImpl.class)
 public interface PipelineFunctionRunnerProvider {
 
+    /**
+     * Creates the runner for one pipeline step: it reads each input sample, runs the function, post-processes and
+     * validates the result, and serialises it. Input and output formats come from the function's transform annotations,
+     * falling back to the pipeline serialisation and then to the default JSON mapper and writer. One runner serves every
+     * sample of the step, possibly from several threads at once.
+     *
+     * @param outputXsdSchema schema to validate function output against, or null to skip schema validation.
+     *                        A {@link Schema} rather than a {@link javax.xml.validation.Validator} is taken here
+     *                        since the resulting {@link PipelineFunctionRunner} may be invoked concurrently for
+     *                        different samples, and {@code Validator} is not thread-safe; a fresh, thread-confined
+     *                        validator is created per invocation from the schema instead.
+     */
     PipelineFunctionRunner create(TransformType transformType,
                                   Class<? extends RosettaModelObject> inputType,
                                   Class<?> functionType,
@@ -39,5 +51,5 @@ public interface PipelineFunctionRunnerProvider {
                                   PipelineModel.Serialisation outputSerialisation,
                                   ObjectMapper defaultJsonObjectMapper,
                                   ObjectWriter defaultJsonObjectWriter,
-                                  Validator outputXsdValidator);
+                                  Schema outputXsdSchema);
 }
