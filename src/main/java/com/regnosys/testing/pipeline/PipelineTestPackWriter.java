@@ -84,6 +84,17 @@ public class PipelineTestPackWriter {
         this.helper = helper;
     }
 
+    /**
+     * Generates the test packs of every node in the tree described by the config, in transform type order. For each
+     * node it runs the node's function over every input sample that passes both the tree-wide filter and the node's own
+     * filter, writes each output under the node's output path, and writes one test pack config per test pack.
+     * <p>
+     * Each node logs one INFO line with how many test packs it generated, how long that took, and how many downstream
+     * functions read its output; paths and per-sample detail are logged at DEBUG.
+     *
+     * @param config the tree to generate; does nothing (and logs an error) if it has no write path
+     * @throws IOException if a sample can't be read or an output or config file can't be written
+     */
     public void writeTestPacks(PipelineTreeConfig config) throws IOException {
         if (config.getWritePath() == null) {
             LOGGER.error("Write path not configured. Aborting.");
@@ -92,7 +103,7 @@ public class PipelineTestPackWriter {
         Stopwatch stopwatch = Stopwatch.createStarted();
         ValidationSummariser validationSummariser = config.getValidationSummariser();
 
-        LOGGER.info("Starting test pack Generation");
+        LOGGER.debug("Starting test pack Generation");
         ObjectWriter configObjectWriter = ObjectMapperGenerator.createWriterMapper().writerWithDefaultPrettyPrinter();
         ObjectWriter jsonObjectWriter = defaultSerialisation.createWriter(config.isSortJsonPropertiesAlphabetically());
 
@@ -106,24 +117,29 @@ public class PipelineTestPackWriter {
             Stopwatch pipelineStopwatch = Stopwatch.createStarted();
             TransformType transformType = pipelineNode.getTransformType();
             String functionName = pipelineNode.getFunction().getName();
-            LOGGER.info("Generating {} test packs for {} ", transformType, functionName);
+            LOGGER.debug("Generating {} test packs for {} ", transformType, functionName);
 
             final PipelineTestPackFilter pipelineTestPackFilter = config.getTestPackFilter();
             if (pipelineTestPackFilter != null && pipelineTestPackFilter.getExcludedFunctionsFromTestPackGeneration().contains(pipelineNode.getFunction())) {
-                LOGGER.info("Aborting {} Test Pack Generation for {} as this has been excluded from Test Pack generation", transformType, functionName);
+                LOGGER.debug("Aborting {} Test Pack Generation for {} as this has been excluded from Test Pack generation", transformType, functionName);
                 continue;
             }
 
             Path inputPath = resourcesPath.resolve(pipelineNode.getInputPath(config.isStrictUniqueIds()));
-            LOGGER.info("Input path {} ", inputPath);
+            PipelineNode upstream = pipelineNode.getUpstream();
+            if (upstream == null) {
+                LOGGER.debug("Input path {} ", inputPath);
+            } else {
+                LOGGER.debug("Input path {} (output of {} {})", inputPath, upstream.getTransformType(), upstream.getFunction().getName());
+            }
 
             Path outputPath = resourcesPath.resolve(pipelineNode.getOutputPath(config.isStrictUniqueIds()));
-            LOGGER.info("Output path {} ", outputPath);
+            LOGGER.debug("Output path {} ", outputPath);
 
             List<Path> inputSamples = findAllSamples(inputPath);
 
             Map<String, List<Path>> testPackToSamples =
-                    filterAndGroupingByTestPackId(resourcesPath, inputPath, inputSamples, config.getTestPackIdFilter(), config.getCsvTestPackSourceFiles());
+                    filterAndGroupingByTestPackId(resourcesPath, inputPath, inputSamples, config.getTestPackIdFilter().and(pipelineNode.getTestPackIdFilter()), config.getCsvTestPackSourceFiles());
 
             Map<String, List<Path>> filteredTestPackToSamples = Optional.ofNullable(pipelineTestPackFilter)
                     .map(t -> filterTestPacks(pipelineNode, pipelineTestPackFilter, testPackToSamples)).orElse(testPackToSamples);
@@ -136,7 +152,13 @@ public class PipelineTestPackWriter {
                 Path writeFile = writePath.resolve(testPackModel.getId() + ".json");
                 configObjectWriter.writeValue(writeFile.toFile(), testPackModel);
             }
-            LOGGER.info("Generated {} {} test packs for {}, took {}", filteredTestPackToSamples.size(), transformType, functionName, pipelineStopwatch);
+            int downstreamCount = pipelineTree.downstreamCount(pipelineNode);
+            if (downstreamCount == 0) {
+                LOGGER.info("Generated {} {} test packs for {}, took {}", filteredTestPackToSamples.size(), transformType, functionName, pipelineStopwatch);
+            } else {
+                LOGGER.info("Generated {} {} test packs for {}, took {}; output read by {} downstream functions",
+                        filteredTestPackToSamples.size(), transformType, functionName, pipelineStopwatch, downstreamCount);
+            }
         }
 
         if (validationSummariser != null) {
@@ -146,6 +168,10 @@ public class PipelineTestPackWriter {
         LOGGER.info("Test pack generation complete, took {}", stopwatch);
     }
 
+    /**
+     * Every regular file under the input folder, or none if the folder doesn't exist (for example when an upstream
+     * node generated no output).
+     */
     private List<Path> findAllSamples(Path inputDir) throws IOException {
         if (!Files.exists(inputDir)) {
             return List.of();
@@ -157,6 +183,11 @@ public class PipelineTestPackWriter {
         }
     }
 
+    /**
+     * Runs the node's function over every sample of one test pack, writes each output under {@code outputDir} (with
+     * the output format's file extension), adds each sample's validation report to the summariser, and returns the
+     * test pack model, with its samples sorted by id.
+     */
     private TestPackModel writeTestPackSamples(Path resourcesPath,
                                                Path inputPath,
                                                Path outputDir,
@@ -167,9 +198,9 @@ public class PipelineTestPackWriter {
                                                ObjectMapper jsonObjectMapper,
                                                ObjectWriter jsonObjectWriter,
                                                ValidationSummariser validationSummariser) throws IOException {
-        LOGGER.info("Test pack sample generation started for {}", testPackId);
+        LOGGER.debug("Test pack sample generation started for {}", testPackId);
         TransformType transformType = pipelineNode.getTransformType();
-        LOGGER.info("{} {} samples to be generated", inputSamplesForTestPack.size(), transformType);
+        LOGGER.debug("{} {} samples to be generated", inputSamplesForTestPack.size(), transformType);
         List<TestPackModel.SampleModel> sampleModels = new ArrayList<>();
         String pipelineId = pipelineNode.id(config.isStrictUniqueIds());
         String pipelineIdSuffix = pipelineNode.idSuffix(config.isStrictUniqueIds(), "-");
@@ -197,7 +228,7 @@ public class PipelineTestPackWriter {
         String functionName = functionType.getSimpleName();
         Stopwatch stopwatch = Stopwatch.createStarted();
         for (Path inputSample : inputSamplesForTestPack) {
-            LOGGER.info("Generating {} function {} test pack {} sample {}", transformType, functionName, testPackId, inputSample.getFileName());
+            LOGGER.debug("Generating {} function {} test pack {} sample {}", transformType, functionName, testPackId, inputSample.getFileName());
 
             Path relativeOutputPath = resourcesPath.relativize(outputDir.resolve(resourcesPath.relativize(inputPath).relativize(inputSample)));
             Path outputPath = relativeOutputPath.getParent().resolve(Path.of(updateFileExtensionBasedOnOutputFormat(pipeline, relativeOutputPath.toFile().getName())));
@@ -227,7 +258,7 @@ public class PipelineTestPackWriter {
                 .sorted(Comparator.comparing(TestPackModel.SampleModel::getId))
                 .collect(Collectors.toList());
 
-        LOGGER.info("Function {} test pack {} generation complete, took {}", functionName, testPackId, stopwatch);
+        LOGGER.debug("Function {} test pack {} generation complete, took {}", functionName, testPackId, stopwatch);
 
         String testPackName = helper.capitalizeFirstLetter(testPackId.replace("-", " "));
         return new TestPackModel(String.format("test-pack-%s-%s-%s", transformType.name().toLowerCase(), pipelineIdSuffix, testPackId), pipelineId, testPackName, sortedSamples);
